@@ -1,0 +1,2 @@
+include 'com.rainerschuster.xtext.langserver.fidl'
+include 'com.rainerschuster.xtext.langserver.fidl.ide'

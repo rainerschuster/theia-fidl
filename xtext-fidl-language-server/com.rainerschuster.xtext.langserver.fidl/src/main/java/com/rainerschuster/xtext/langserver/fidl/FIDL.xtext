@@ -1,0 +1,237 @@
+grammar com.rainerschuster.xtext.langserver.fidl.FIDL with org.eclipse.xtext.common.Terminals
+
+generate fIDL "http://www.rainerschuster.com/xtext/langserver/fidl/FIDL"
+
+// Note: Moved AttributeList? out of declarations to separate AttributedDeclaration and modified DeclarationList
+// Note: grammar fix: ParameterList can be empty
+// Note: grammar fix: Ordinal is optional
+// Note: grammar fix: ID allows underscore after first index
+// Note: grammar fix: Added ConstDeclaration to interface, struct and union members => TODO remove workaround field=..., const=...
+
+// TODO Where is AllowedID allowed?
+
+File:
+	LibraryHeader UsingList DeclarationList;
+
+// TODO There may be more files with the same library name => should be in same namespace!
+LibraryHeader:
+	'library' name=CompoundIdentifier ';';
+
+fragment UsingList *:
+	usings+=Using*;
+
+fragment DeclarationList *:
+	declarations+=AttributedDeclaration*;
+
+// helper
+AttributedDeclaration:
+	AttributeList? declaration=Declaration ';'
+;
+
+// TODO Use QualifiedName?
+CompoundIdentifier:
+	AllowedID (=> '.' AllowedID)*;
+
+Using:
+	'using' importedNamespace=CompoundIdentifier ( 'as' name=AllowedID )? ';';
+
+Declaration:
+	ConstDeclaration
+	| EnumDeclaration
+	| InterfaceDeclaration
+	| StructDeclaration
+	| UnionDeclaration;
+
+ConstDeclaration:
+	'const' type=Type name=ID '=' value=Constant;
+
+EnumDeclaration:
+	'enum' name=ID ( ':' type=IntegerType )? '{' ( members+=EnumMember ';' )* '}';
+
+EnumMember:
+	name=ID ( '=' value=EnumMemberValue )?;
+
+EnumMemberValue:
+	value=ID | NumberLiteral; // NUMERIC-LITERAL;
+
+InterfaceDeclaration:
+	'interface' name=ID ( ':' SuperInterfaceList )? '{' ( members+=InterfaceMember ';' )*  '}';
+
+InterfaceMember:
+	InterfaceMethod
+	| ConstDeclaration
+;
+
+fragment SuperInterfaceList *:
+	superInterfaces+=[InterfaceDeclaration|CompoundIdentifier] (',' superInterfaces+=[InterfaceDeclaration|CompoundIdentifier])*;
+
+InterfaceMethod:
+	(/*Ordinal*/ordinal=NumberLiteral ':')? method=InterfaceParameters;
+
+InterfaceParameters:
+	name=ID parameters=ParameterList ( '->' result=ParameterList )?
+    | '->' resultName=ID result=ParameterList
+;
+
+ParameterList:
+	{ParameterList} '(' Parameters? ')';
+
+fragment Parameters *:
+	parameters+=Parameter (',' parameters+=Parameter)*;
+
+Parameter:
+	type=Type name=AllowedID;
+
+StructDeclaration:
+	'struct' name=ID '{' ( members+=StructMember ';' )* '}';
+
+// Helper
+StructMember:
+	field=StructField
+	| constant=ConstDeclaration
+;
+
+StructField:
+	type=Type name=AllowedID ( '=' value=Constant )?;
+
+UnionDeclaration:
+	'union' name=ID '{' ( members+=ConstDeclaration ';' )* ( fields+=UnionMember ';' )+ '}';
+
+// Helper
+UnionMember:
+	UnionField
+//	| ConstDeclaration
+;
+
+UnionField:
+	type=Type name=AllowedID;
+
+fragment AttributeList *:
+	'[' attributes+=Attribute (',' attributes+=Attribute)* ']';
+
+Attribute:
+	name=AllowedID ('=' value=STRING)?;
+
+Type:
+	ArrayType
+	| VectorType
+	| StringType
+	| HandleType
+	| RequestType
+	| PrimitiveType
+	| IdentifierType // Moved to last position
+;
+
+IdentifierType:
+	ref=[Declaration|CompoundIdentifier] nullable?='?'?;
+
+ArrayType:
+	'array' '<' type=Type '>' ':' constraint=Constant;
+
+VectorType:
+	'vector' '<' type=Type '>' ( ':' constraint=Constant )? nullable?='?'?;
+
+StringType:
+	{StringType} 'string' ( ':' constraint=Constant )? nullable?='?'?;
+
+HandleType:
+	{HandleType} 'handle' ( '<' type=HandleSubtype '>' )? nullable?='?'?;
+
+HandleSubtype:
+	'process' | 'thread' | 'vmo' | 'channel' | 'event' | 'port' |
+	'interrupt' | 'log' | 'socket' | 'resource' | 'eventpair' |
+	'job' | 'vmar' | 'fifo' | 'guest' | 'timer';
+
+RequestType:
+	'request' '<' ref=[Declaration|CompoundIdentifier] '>' nullable?='?'?;
+
+PrimitiveType:
+	IntegerType
+	| {StatusType} 'status'
+	| {BooleanType} 'bool'
+	| {Float32Type} 'float32'
+	| {Float64Type} 'float64';
+
+IntegerType:
+	{Int8Type} 'int8' | {Int16Type} 'int16' | {Int32Type} 'int32' | {Int64Type} 'int64' |
+	{Uint8Type} 'uint8' | {Uint16Type} 'uint16' | {Uint32Type} 'uint32' | {Uint64Type} 'uint64';
+
+// TODO What should CompoundIdentifier resolve to?
+Constant:
+	ci=CompoundIdentifier | Literal;
+
+//Ordinal:
+//	NUMERIC-LITERAL;
+
+//Literal:
+//	STRING-LITERAL | NUMERIC-LITERAL | TRUE | FALSE;
+
+
+//LiteralExpression returns Expression:
+Literal:
+	BooleanLiteral |
+	NumberLiteral |
+	StringLiteral
+;
+
+BooleanLiteral returns Expression :
+	{BooleanLiteral} ('false' | isTrue?='true');
+
+NumberLiteral returns Expression :
+	{NumberLiteral} value=Number;
+
+StringLiteral returns Expression:
+	{StringLiteral} value=STRING;
+
+
+// Reserved Words
+//array, as, bool, const, enum, float32, float64, handle, int8, int16,
+//int32, int64, interface, library, request, string, struct, uint8,
+//uint16, uint32, uint64, union, using, vector
+
+// TODO What else?
+AllowedID:
+	ValidID
+	| HandleSubtype
+	| 'status'
+;
+
+ValidID:
+	ID;
+
+//@Override
+//QualifiedName:
+//	ValidID (=>'.' ValidID)*;
+
+// Note: Added negative number support
+Number hidden():
+	'-'? (HEX | (INT | DECIMAL) ('.' (INT | DECIMAL))?);
+
+///**
+// * Dummy rule, for "better" downwards compatibility, since GrammarAccess generates non-static inner classes,
+// * which makes downstream grammars break on classloading, when a rule is removed.
+// */
+//StaticQualifier:
+//	(ValidID '::')+
+//;
+
+terminal HEX:
+	('0x'|'0X') ('0'..'9'|'a'..'f'|'A'..'F'|'_')+
+	('#' (('b'|'B')('i'|'I') | ('l'|'L')))?;
+
+//terminal INT returns ecore::EInt:
+//	'0'..'9' ('0'..'9'|'_')*;
+
+terminal DECIMAL:
+	INT
+	(('e'|'E') ('+'|'-')? INT)?
+	(('b'|'B')('i'|'I'|'d'|'D') | ('l'|'L'|'d'|'D'|'f'|'F'))?;
+
+
+
+
+
+
+// Note: Added support for @-escaping
+@Override
+terminal ID  		: '@'?('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*;
