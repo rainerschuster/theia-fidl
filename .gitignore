@@ -1,5 +1,6 @@
 .DS_Store
 node_modules
+.browser_modules
 build
 bin
 lib
@@ -10,3 +11,6 @@ webpack.config.js
 .gradle
 .idea
 .metadata
+*.log
+*-app/*
+!*-app/package.json
